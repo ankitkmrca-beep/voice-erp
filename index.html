@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI Voice ERP System (Powered by Gemini)</title>
+  <title>AI Voice ERP System</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
     body { background-color: #f0f2f5; padding: 20px; display: flex; justify-content: center; }
@@ -15,7 +15,7 @@
     .api-box input { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 13px; margin-top: 5px; }
 
     .voice-section { background: #f1f3f4; padding: 20px; border-radius: 10px; text-align: center; margin-bottom: 25px; border: 1px solid #dadce0; }
-    .mic-btn { background: #1a73e8; color: white; border: none; padding: 15px 25px; font-size: 16px; border-radius: 50px; cursor: pointer; font-weight: bold; transition: 0.3s; }
+    .mic-btn { background: #1a73e8; color: white; border: none; padding: 15px 25px; font-size: 16px; border-radius: 50px; cursor: pointer; font-weight: bold; transition: 0.3s; width: 100%; }
     .mic-btn.recording { background: #d93025; animation: pulse 1.5s infinite; }
     .status-text { margin-top: 10px; font-size: 14px; color: #5f6368; font-style: italic; }
 
@@ -41,7 +41,7 @@
   <!-- Gemini API Key Input -->
   <div class="api-box">
     <label for="apiKey">🔑 Google Gemini API Key:</label>
-    <input type="password" id="apiKey" placeholder="AIzaSy..." onchange="saveApiKey(this.value)">
+    <input type="password" id="apiKey" placeholder="AIzaSy..." oninput="saveApiKey(this.value)">
   </div>
 
   <!-- Voice Section -->
@@ -64,3 +64,237 @@
     </div>
 
     <div class="form-group">
+      <label>Item Description</label>
+      <input type="text" id="itemDesc" required placeholder="e.g. AC">
+    </div>
+
+    <div style="display: flex; gap: 10px;">
+      <div class="form-group" style="flex: 1;">
+        <label>Quantity</label>
+        <input type="number" id="qty" value="1" required oninput="calculateTotal()">
+      </div>
+
+      <div class="form-group" style="flex: 1;">
+        <label>Rate (₹)</label>
+        <input type="number" id="rate" required oninput="calculateTotal()">
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>Total Amount (₹)</label>
+      <input type="number" id="totalAmount" readonly>
+    </div>
+
+    <div class="form-group">
+      <label>Payment Status</label>
+      <select id="paymentStatus">
+        <option value="Paid">Paid</option>
+        <option value="Pending">Pending</option>
+      </select>
+    </div>
+
+    <button type="submit" class="btn-submit">Save Sale & Generate Invoice</button>
+  </form>
+</div>
+
+<script>
+  let recognition = null;
+  let isListening = false;
+
+  window.onload = () => {
+    const savedKey = localStorage.getItem("gemini_api_key");
+    if (savedKey) document.getElementById("apiKey").value = savedKey;
+  };
+
+  function saveApiKey(key) {
+    localStorage.setItem("gemini_api_key", key.trim());
+  }
+
+  function calculateTotal() {
+    const q = parseFloat(document.getElementById('qty').value) || 0;
+    const r = parseFloat(document.getElementById('rate').value) || 0;
+    document.getElementById('totalAmount').value = q * r;
+  }
+
+  async function toggleVoice() {
+    const apiKey = document.getElementById("apiKey").value.trim();
+    if (!apiKey) {
+      alert("Please enter your Google Gemini API Key at the top first!");
+      return;
+    }
+
+    // Request Mic Access directly to fix unresponsive mobile tap
+    try {
+      await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err) {
+      alert("Microphone permission denied! Please allow microphone access in browser settings.");
+      return;
+    }
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("Speech recognition is not supported in this browser. Please use Google Chrome.");
+      return;
+    }
+
+    if (isListening && recognition) {
+      recognition.stop();
+      return;
+    }
+
+    recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = 'hi-IN';
+
+    recognition.onstart = function() {
+      isListening = true;
+      const micBtn = document.getElementById("micBtn");
+      micBtn.innerText = "🛑 Stop & Process Speech";
+      micBtn.classList.add("recording");
+      document.getElementById("statusText").innerText = "🎙️ Listening... Speak clearly now!";
+    };
+
+    recognition.onresult = async function(event) {
+      const transcript = event.results[0][0].transcript;
+      document.getElementById("statusText").innerText = `Heard: "${transcript}" — Gemini processing...`;
+      await extractFieldsWithGemini(transcript, apiKey);
+    };
+
+    recognition.onerror = function(event) {
+      document.getElementById("statusText").innerText = "Speech error: " + event.error;
+      resetMicUI();
+    };
+
+    recognition.onend = function() {
+      resetMicUI();
+    };
+
+    recognition.start();
+  }
+
+  function resetMicUI() {
+    isListening = false;
+    const micBtn = document.getElementById("micBtn");
+    micBtn.innerText = "🎙️ Tap to Speak (Any Language)";
+    micBtn.classList.remove("recording");
+  }
+
+  async function extractFieldsWithGemini(transcriptText, apiKey) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+
+    const systemInstructions = `You are a strict sales data extractor for an Indian ERP app.
+Parse spoken voice commands (Hindi, Hinglish, or English) into structured JSON.
+
+Rules:
+1. Items like "AC", "ऐसी", "एसी", "Fridge", "TV", "Aata", "Wheat Flour", "Loose Aata" MUST go into "itemDesc".
+2. "Ek AC" / "एक एसी" means qty = 1 and itemDesc = "AC".
+3. Words before "ko", "ne", "को", or "ने" are customer names (e.g. "Ankit ko" -> customerName: "Ankit").
+4. If no customer name is specified (e.g. "Ek AC 35000 me becha"), use customerName: "Cash Customer".
+5. Words like "udhaar", "pending", "baki" set paymentStatus to "Pending", otherwise "Paid".`;
+
+    const requestBody = {
+      system_instruction: {
+        parts: [{ text: systemInstructions }]
+      },
+      contents: [
+        {
+          parts: [{ text: `Parse this entry: "${transcriptText}"` }]
+        }
+      ],
+      generationConfig: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: "OBJECT",
+          properties: {
+            customerName: { type: "STRING" },
+            itemDesc: { type: "STRING" },
+            qty: { type: "NUMBER" },
+            rate: { type: "NUMBER" },
+            paymentStatus: { type: "STRING", enum: ["Paid", "Pending"] }
+          },
+          required: ["customerName", "itemDesc", "qty", "rate", "paymentStatus"]
+        }
+      }
+    };
+
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody)
+      });
+
+      const data = await response.json();
+      if (data.error) throw new Error(data.error.message);
+
+      const rawJsonText = data.candidates[0].content.parts[0].text;
+      const parsed = JSON.parse(rawJsonText);
+
+      fillFormFields(
+        parsed.customerName || "Cash Customer",
+        parsed.itemDesc || "General Goods",
+        parsed.qty || 1,
+        parsed.rate || 0,
+        parsed.paymentStatus || "Paid"
+      );
+
+    } catch (err) {
+      console.warn("Gemini error, fallback active: ", err);
+      fallbackLocalRegexParse(transcriptText);
+    }
+  }
+
+  function fallbackLocalRegexParse(text) {
+    let customer = "Cash Customer";
+    let item = "General Goods";
+    let qty = 1;
+    let rate = 0;
+    let status = /udhaar|pending|unpaid|baki/i.test(text) ? "Pending" : "Paid";
+
+    let cleanText = text
+      .replace(/\b(एक|1)\b/gi, ' 1 ')
+      .replace(/\b(ऐसी|एसी|ac)\b/gi, 'AC');
+
+    if (/AC/i.test(cleanText)) {
+      item = "AC";
+    }
+
+    const customerMatch = cleanText.match(/([a-zA-Z\u0900-\u097F]+)\s+(?:ko|ne|to|for|ने|को)\b/i);
+    if (customerMatch && !/AC|becha|sale/i.test(customerMatch[1])) {
+      customer = customerMatch[1].trim();
+    }
+
+    const numbers = cleanText.match(/\d+/g);
+    if (numbers && numbers.length > 0) {
+      const parsedNumbers = numbers.map(n => parseInt(n, 10));
+      const filtered = parsedNumbers.filter(n => n !== qty);
+      rate = filtered.length > 0 ? Math.max(...filtered) : (parsedNumbers[0] !== 1 ? parsedNumbers[0] : 0);
+    }
+
+    fillFormFields(customer, item, qty, rate, status);
+  }
+
+  function fillFormFields(customer, item, qty, rate, paymentStatus) {
+    document.getElementById("customerName").value = customer;
+    document.getElementById("itemDesc").value = item;
+    document.getElementById("qty").value = qty;
+    document.getElementById("rate").value = rate;
+    document.getElementById("paymentStatus").value = paymentStatus;
+
+    calculateTotal();
+
+    const total = qty * rate;
+    document.getElementById("confirmText").innerText = `${customer} | ${qty}x ${item} | Rate: ₹${rate} | Total: ₹${total}`;
+    document.getElementById("confirmationBox").style.display = "block";
+    document.getElementById("statusText").innerText = `✅ Processed: ${customer} bought ${item}`;
+  }
+
+  function handleManualSubmit(e) {
+    e.preventDefault();
+    alert("Sale Saved Successfully!");
+  }
+</script>
+
+</body>
+</html>
