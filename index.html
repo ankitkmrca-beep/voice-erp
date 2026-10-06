@@ -1,234 +1,69 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Voice ERP System</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-    body { background-color: #f0f2f5; padding: 20px; display: flex; justify-content: center; }
-    .container { background: white; padding: 30px; border-radius: 12px; width: 100%; max-width: 550px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
-    h2 { margin-bottom: 20px; color: #1a73e8; text-align: center; }
-    
-    .voice-section { background: #e8f0fe; padding: 20px; border-radius: 10px; text-align: center; margin-bottom: 25px; border: 1px solid #aecbfa; }
-    .mic-btn { background: #1a73e8; color: white; border: none; padding: 15px 25px; font-size: 16px; border-radius: 50px; cursor: pointer; font-weight: bold; transition: 0.2s; }
-    .mic-btn:hover { background: #1557b0; }
-    .status-text { margin-top: 10px; font-size: 14px; color: #5f6368; font-style: italic; }
+let recognition = null;
+let isRecording = false;
 
-    .form-group { margin-bottom: 15px; }
-    label { display: block; margin-bottom: 5px; font-weight: 600; color: #3c4043; font-size: 14px; }
-    input, select { width: 100%; padding: 10px; border: 1px solid #dadce0; border-radius: 6px; font-size: 14px; }
-    
-    .btn-submit { width: 100%; background: #34a853; color: white; border: none; padding: 12px; font-size: 16px; border-radius: 6px; font-weight: bold; cursor: pointer; margin-top: 10px; }
-    .btn-submit:hover { background: #2d8e47; }
-    
-    .confirmation-box { background: #fff3cd; border: 1px solid #ffeeba; padding: 15px; border-radius: 8px; margin-top: 15px; display: none; }
-    .confirmation-btns { display: flex; gap: 10px; margin-top: 10px; }
-    .btn-confirm { flex: 1; background: #28a745; color: white; border: none; padding: 8px; border-radius: 4px; cursor: pointer; font-weight: bold; }
-    .btn-cancel { flex: 1; background: #dc3545; color: white; border: none; padding: 8px; border-radius: 4px; cursor: pointer; font-weight: bold; }
-  </style>
-</head>
-<body>
+function startVoiceEntry() {
+  const statusText = document.getElementById("statusText");
+  const micBtn = document.querySelector(".mic-btn");
 
-<div class="container">
-  <h2>🎙️ Voice & Manual ERP</h2>
-
-  <!-- Voice Section -->
-  <div class="voice-section">
-    <button class="mic-btn" onclick="startVoiceEntry()">🎙️ Speak Command (Jarvis)</button>
-    <div id="statusText" class="status-text">Click mic and speak (e.g., "Sharma ji ko 2 AC 45000 rate pe becha")</div>
-  </div>
-
-  <!-- Voice Confirmation Banner -->
-  <div id="confirmBox" class="confirmation-box">
-    <strong>Verify Entry:</strong>
-    <p id="confirmMsg"></p>
-    <div class="confirmation-btns">
-      <button class="btn-confirm" onclick="confirmAndSave()">Yes, Save Sale</button>
-      <button class="btn-cancel" onclick="cancelEntry()">Cancel / Edit</button>
-    </div>
-  </div>
-
-  <hr style="margin: 20px 0; border: 0; border-top: 1px solid #eee;">
-
-  <!-- Manual Form -->
-  <form id="salesForm" onsubmit="handleManualSubmit(event)">
-    <div class="form-group">
-      <label>Customer Name</label>
-      <input type="text" id="custName" required placeholder="e.g. Sharma Ji">
-    </div>
-    <div class="form-group">
-      <label>Item Description</label>
-      <input type="text" id="itemName" required placeholder="e.g. AC 1.5 Ton">
-    </div>
-    <div style="display: flex; gap: 10px;">
-      <div class="form-group" style="flex: 1;">
-        <label>Quantity</label>
-        <input type="number" id="itemQty" value="1" min="1" required oninput="calcTotal()">
-      </div>
-      <div class="form-group" style="flex: 1;">
-        <label>Rate (₹)</label>
-        <input type="number" id="itemRate" required placeholder="45000" oninput="calcTotal()">
-      </div>
-    </div>
-    <div class="form-group">
-      <label>Total Amount (₹)</label>
-      <input type="number" id="itemTotal" readonly placeholder="0">
-    </div>
-    <div class="form-group">
-      <label>Payment Status</label>
-      <select id="payStatus">
-        <option value="Paid">Paid</option>
-        <option value="Unpaid / Credit">Unpaid / Credit</option>
-      </select>
-    </div>
-
-    <button type="submit" class="btn-submit">Save Sale & Generate Invoice</button>
-  </form>
-</div>
-
-<script>
-  // =========================================================================
-  // PASTE YOUR DEPLOYED WEB APP URL HERE BETWEEN THE SINGLE QUOTES
-  // =========================================================================
-  const BACKEND_URL = 'https://script.google.com/macros/s/AKfycbxCoyDEjViv6KwvrrNoXehlwssZ3e0mMjGtRRM9SLrSOe_nUXxtayFFhbS-kkOFBpgk/exec';
-  // =========================================================================
-
-  let recognition;
-  let isListening = false;
-
-  if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    recognition = new SpeechRecognition();
-    recognition.lang = 'hi-IN'; // Works with Hinglish, English, and Hindi
-    recognition.continuous = false;
-
-    recognition.onresult = function(event) {
-      const speechText = event.results[0][0].transcript;
-      document.getElementById('statusText').innerText = `Recognized: "${speechText}"`;
-      parseVoiceInput(speechText);
-    };
-
-    recognition.onerror = function() {
-      document.getElementById('statusText').innerText = "Voice error. Please try again or type manually.";
-    };
+  // Check if browser supports Speech Recognition
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    alert("Speech recognition is not supported in this browser. Please use Chrome.");
+    return;
   }
 
-  function startVoiceEntry() {
-    if (!recognition) {
-      alert("Browser does not support Web Speech API. Please use Chrome.");
-      return;
-    }
-    document.getElementById('statusText').innerText = "Listening... Speak your command now.";
-    recognition.start();
+  // If already recording, TAP AGAIN TO STOP
+  if (isRecording && recognition) {
+    recognition.stop();
+    return;
   }
 
-  function calcTotal() {
-    const qty = parseFloat(document.getElementById('itemQty').value) || 0;
-    const rate = parseFloat(document.getElementById('itemRate').value) || 0;
-    document.getElementById('itemTotal').value = qty * rate;
-  }
+  // Initialize Speech Recognition
+  recognition = new SpeechRecognition();
+  recognition.continuous = true; // Keeps listening until tapped again
+  recognition.interimResults = true; // Shows live preview as you speak
+  recognition.lang = 'hi-IN'; // Optimized for Hindi / Hinglish
 
-  // Basic Parsing Logic for Hinglish Voice Inputs
-  function parseVoiceInput(text) {
-    // Extract numbers from sentence
-    const numbers = text.match(/\d+/g);
-    
-    let qty = 1;
-    let rate = 0;
+  let finalTranscript = '';
 
-    if (numbers && numbers.length >= 2) {
-      qty = parseInt(numbers[0]);
-      rate = parseInt(numbers[1]);
-    } else if (numbers && numbers.length === 1) {
-      rate = parseInt(numbers[0]);
-    }
+  recognition.onstart = function() {
+    isRecording = true;
+    if (micBtn) micBtn.innerText = "🛑 Tap Again to Stop Recording";
+    statusText.innerText = "🎙️ Recording... Speak now and tap again when finished!";
+  };
 
-    // Auto fill form fields
-    document.getElementById('custName').value = extractCustomer(text);
-    document.getElementById('itemName').value = extractItem(text);
-    document.getElementById('itemQty').value = qty;
-    document.getElementById('itemRate').value = rate;
-    calcTotal();
-
-    const total = qty * rate;
-    const cust = document.getElementById('custName').value;
-    const item = document.getElementById('itemName').value;
-
-    // Trigger Voice Confirmation
-    const speakMsg = `${cust} ke liye ${qty} ${item}, kul ${total} rupaye. Kya ise save karein?`;
-    document.getElementById('confirmMsg').innerText = `${cust} | ${qty} x ${item} | Total: ₹${total}`;
-    document.getElementById('confirmBox').style.display = 'block';
-
-    speakText(speakMsg);
-  }
-
-  function extractCustomer(text) {
-    if (text.toLowerCase().includes("sharma")) return "Sharma Ji";
-    if (text.toLowerCase().includes("verma")) return "Verma Ji";
-    if (text.toLowerCase().includes("gupta")) return "Gupta Ji";
-    return "Cash Customer";
-  }
-
-  function extractItem(text) {
-    if (text.toLowerCase().includes("ac")) return "AC 1.5 Ton";
-    if (text.toLowerCase().includes("tv")) return "Smart TV";
-    if (text.toLowerCase().includes("fridge")) return "Refrigerator";
-    return "General Goods";
-  }
-
-  function speakText(msg) {
-    const speech = new SpeechSynthesisUtterance(msg);
-    speech.lang = 'hi-IN';
-    window.speechSynthesis.speak(speech);
-  }
-
-  function confirmAndSave() {
-    document.getElementById('confirmBox').style.display = 'none';
-    submitData();
-  }
-
-  function cancelEntry() {
-    document.getElementById('confirmBox').style.display = 'none';
-    document.getElementById('statusText').innerText = "Entry canceled. Edit details manually below.";
-  }
-
-  function handleManualSubmit(e) {
-    e.preventDefault();
-    submitData();
-  }
-
-  function submitData() {
-    const payload = {
-      customer_name: document.getElementById('custName').value,
-      item: document.getElementById('itemName').value,
-      qty: document.getElementById('itemQty').value,
-      rate: document.getElementById('itemRate').value,
-      status: document.getElementById('payStatus').value
-    };
-
-    document.getElementById('statusText').innerText = "Saving to Google Sheets and generating PDF...";
-
-    fetch(BACKEND_URL, {
-      method: 'POST',
-      body: JSON.stringify(payload)
-    })
-    .then(res => res.json())
-    .then(data => {
-      if (data.status === "success") {
-        speakText("Sale successfully recorded.");
-        alert(`Success!\nInvoice No: ${data.invoice_no}\nPDF saved in Google Drive.`);
-        document.getElementById('salesForm').reset();
-        document.getElementById('statusText').innerText = "Ready for next sale.";
+  recognition.onresult = function(event) {
+    let interimTranscript = '';
+    for (let i = event.resultIndex; i < event.results.length; ++i) {
+      if (event.results[i].isFinal) {
+        finalTranscript += event.results[i][0].transcript;
       } else {
-        alert("Error: " + data.message);
+        interimTranscript += event.results[i][0].transcript;
       }
-    })
-    .catch(err => {
-      alert("Saved! (Check Google Sheet & Drive).");
-    });
-  }
-</script>
+    }
+    statusText.innerText = "Listening: " + (finalTranscript || interimTranscript);
+  };
 
-</body>
-</html>
+  recognition.onerror = function(event) {
+    statusText.innerText = "Error: " + event.error;
+    resetMicUI();
+  };
+
+  recognition.onend = function() {
+    resetMicUI();
+    if (finalTranscript.trim().length > 0) {
+      statusText.innerText = `Processing: "${finalTranscript}"`;
+      parseVoiceCommand(finalTranscript);
+    } else {
+      statusText.innerText = "No voice detected. Tap to try again.";
+    }
+  };
+
+  recognition.start();
+}
+
+function resetMicUI() {
+  isRecording = false;
+  const micBtn = document.querySelector(".mic-btn");
+  if (micBtn) micBtn.innerText = "🎙️ Speak Command (Jarvis)";
+}
