@@ -174,53 +174,48 @@
     let qty = 1;
     let rate = 0;
 
-    const lowerText = text.toLowerCase();
-
     // 1. Extract Customer (Word before "ko" or "ne")
     const customerMatch = text.match(/([a-zA-Z\u0900-\u097F]+)\s+(?:ko|ne)\b/i);
     if (customerMatch) {
       customer = customerMatch[1].trim();
     }
 
-    // 2. Extract Quantities (e.g. "1 pcs", "2 piece", "1 pc")
+    // 2. Extract Quantities
     const qtyMatch = text.match(/(\d+)\s*(?:pcs|pc|piece|pieces|nos|qnty|kilo|kg)/i);
     if (qtyMatch) {
       qty = parseInt(qtyMatch[1], 10);
     }
 
-    // 3. Extract Numbers/Amounts (e.g., "45000 ka", "rate 45000", "45000")
+    // 3. Extract Rates/Amounts
     const numbers = text.match(/\d+/g);
     if (numbers && numbers.length > 0) {
       const parsedNumbers = numbers.map(n => parseInt(n, 10));
-      // Exclude quantity number if matched
       const prices = parsedNumbers.filter(n => n !== qty);
       if (prices.length > 0) {
-        rate = Math.max(...prices); // Take highest number as price
+        rate = Math.max(...prices);
       } else {
         rate = parsedNumbers[0];
       }
     }
 
-    // 4. Extract Item Name (Text between Customer "ko" and "becha"/"sold"/"ka")
+    // 4. Extract Item Name
     const itemMatch = text.match(/(?:ko|ne)\s+(.+?)\s+(?:becha|sold|sale|ka|rate|\d+)/i);
     if (itemMatch) {
       item = itemMatch[1].trim();
     } else {
-      // Secondary fallback for item extraction
       const altItemMatch = text.match(/(\bAC\b|\bFlour\b|\bAata\b|[a-zA-Z]{2,})/i);
       if (altItemMatch && altItemMatch[1].toLowerCase() !== customer.toLowerCase()) {
         item = altItemMatch[1];
       }
     }
 
-    // Populate Form Fields
+    // Populate fields
     document.getElementById("customerName").value = customer;
     document.getElementById("itemDesc").value = item;
     document.getElementById("qty").value = qty;
     document.getElementById("rate").value = rate;
     calculateTotal();
 
-    // Show Confirmation Banner
     const total = qty * rate;
     document.getElementById("confirmText").innerText = `${customer} | ${qty} x ${item} | Total: ₹${total}`;
     document.getElementById("confirmationBox").style.display = "block";
