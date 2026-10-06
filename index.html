@@ -3,50 +3,56 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Voice ERP System</title>
+  <title>AI Voice ERP System</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
     body { background-color: #f0f2f5; padding: 20px; display: flex; justify-content: center; }
     .container { background: white; padding: 30px; border-radius: 12px; width: 100%; max-width: 550px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
     h2 { margin-bottom: 20px; color: #1a73e8; text-align: center; }
 
+    .api-box { background: #fff8e1; padding: 12px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #ffe082; }
+    .api-box input { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; margin-top: 5px; }
+
     .voice-section { background: #e8f0fe; padding: 20px; border-radius: 10px; text-align: center; margin-bottom: 25px; border: 1px solid #d2e3fc; }
     .mic-btn { background: #1a73e8; color: white; border: none; padding: 15px 25px; font-size: 16px; border-radius: 50px; cursor: pointer; font-weight: bold; transition: 0.3s; }
-    .mic-btn.recording { background: #d93025; }
+    .mic-btn.recording { background: #d93025; animation: pulse 1.5s infinite; }
     .status-text { margin-top: 10px; font-size: 14px; color: #5f6368; font-style: italic; }
+
+    @keyframes pulse {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+      100% { transform: scale(1); }
+    }
 
     .form-group { margin-bottom: 15px; }
     label { display: block; margin-bottom: 5px; font-weight: 600; color: #3c4043; font-size: 14px; }
     input, select { width: 100%; padding: 10px; border: 1px solid #dadce0; border-radius: 6px; font-size: 14px; }
 
     .btn-submit { width: 100%; background: #34a853; color: white; border: none; padding: 12px; font-size: 16px; border-radius: 6px; font-weight: bold; cursor: pointer; margin-top: 10px; }
-    .btn-submit:hover { background: #2d8e47; }
-
-    .confirmation-box { background: #fff3cd; border: 1px solid #ffeeba; padding: 15px; border-radius: 8px; margin-bottom: 20px; display: none; }
-    .confirmation-btns { display: flex; gap: 10px; margin-top: 10px; }
-    .btn-confirm { flex: 1; background: #28a745; color: white; border: none; padding: 8px; border-radius: 4px; cursor: pointer; font-weight: bold; }
-    .btn-cancel { flex: 1; background: #dc3545; color: white; border: none; padding: 8px; border-radius: 4px; cursor: pointer; font-weight: bold; }
+    .confirmation-box { background: #e6f4ea; border: 1px solid #b7e1cd; padding: 15px; border-radius: 8px; margin-bottom: 20px; display: none; }
   </style>
 </head>
 <body>
 
 <div class="container">
-  <h2>🎙️ Voice ERP System</h2>
+  <h2>🤖 AI Voice ERP System</h2>
+
+  <!-- API Key Input -->
+  <div class="api-box">
+    <label for="apiKey">🔑 Groq API Key (Stored Locally):</label>
+    <input type="password" id="apiKey" placeholder="gsk_..." onchange="saveApiKey(this.value)">
+  </div>
 
   <!-- Voice Section -->
   <div class="voice-section">
-    <button class="mic-btn" onclick="toggleVoiceEntry()">🎙️ Speak Command (Jarvis)</button>
-    <div id="statusText" class="status-text">Click mic and speak (e.g., "Ankit ko AC becha 45000 ka 1 pcs")</div>
+    <button id="micBtn" class="mic-btn" onclick="toggleRecording()">🎙️ Tap to Speak (Any Language)</button>
+    <div id="statusText" class="status-text">Ready. Tap mic and speak naturally.</div>
   </div>
 
   <!-- Voice Confirmation Banner -->
   <div id="confirmationBox" class="confirmation-box">
-    <strong>Verify Entry:</strong>
-    <p id="confirmText"></p>
-    <div class="confirmation-btns">
-      <button class="btn-confirm" onclick="confirmVoiceEntry()">Yes, Save Sale</button>
-      <button class="btn-cancel" onclick="cancelVoiceEntry()">Cancel / Edit</button>
-    </div>
+    <strong>AI Extracted Entry:</strong>
+    <p id="confirmText" style="margin-top:5px; font-weight: 500;"></p>
   </div>
 
   <!-- Entry Form -->
@@ -91,8 +97,19 @@
 </div>
 
 <script>
-  let recognition = null;
+  let mediaRecorder = null;
+  let audioChunks = [];
   let isRecording = false;
+
+  // Load saved API Key from localStorage
+  window.onload = () => {
+    const savedKey = localStorage.getItem("groq_api_key");
+    if (savedKey) document.getElementById("apiKey").value = savedKey;
+  };
+
+  function saveApiKey(key) {
+    localStorage.setItem("groq_api_key", key.trim());
+  }
 
   function calculateTotal() {
     const q = parseFloat(document.getElementById('qty').value) || 0;
@@ -100,140 +117,139 @@
     document.getElementById('totalAmount').value = q * r;
   }
 
-  function toggleVoiceEntry() {
-    const statusText = document.getElementById("statusText");
-    const micBtn = document.querySelector(".mic-btn");
-
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      alert("Speech recognition is not supported in this browser. Please use Google Chrome.");
+  async function toggleRecording() {
+    const apiKey = document.getElementById("apiKey").value.trim();
+    if (!apiKey) {
+      alert("Please enter your Groq API Key at the top first!");
       return;
     }
 
-    if (isRecording && recognition) {
-      recognition.stop();
-      return;
-    }
-
-    recognition = new SpeechRecognition();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = 'hi-IN';
-
-    let finalTranscript = '';
-
-    recognition.onstart = function() {
-      isRecording = true;
-      micBtn.innerText = "🛑 Tap Again to Stop Recording";
-      micBtn.classList.add("recording");
-      statusText.innerText = "🎙️ Recording... Speak now!";
-    };
-
-    recognition.onresult = function(event) {
-      let interimTranscript = '';
-      for (let i = event.resultIndex; i < event.results.length; ++i) {
-        if (event.results[i].isFinal) {
-          finalTranscript += event.results[i][0].transcript + ' ';
-        } else {
-          interimTranscript += event.results[i][0].transcript;
-        }
-      }
-      statusText.innerText = "Heard: " + (finalTranscript || interimTranscript);
-    };
-
-    recognition.onerror = function(event) {
-      statusText.innerText = "Error listening: " + event.error;
-      resetMicUI();
-    };
-
-    recognition.onend = function() {
-      resetMicUI();
-      if (finalTranscript.trim().length > 0) {
-        parseVoiceCommand(finalTranscript.trim());
-      } else {
-        statusText.innerText = "No speech detected. Tap to try again.";
-      }
-    };
-
-    recognition.start();
-  }
-
-  function resetMicUI() {
-    isRecording = false;
-    const micBtn = document.querySelector(".mic-btn");
-    micBtn.innerText = "🎙️ Speak Command (Jarvis)";
-    micBtn.classList.remove("recording");
-  }
-
-  function parseVoiceCommand(text) {
-    const statusText = document.getElementById("statusText");
-    statusText.innerText = `Recognized: "${text}"`;
-
-    let customer = "Cash Customer";
-    let item = "General Goods";
-    let qty = 1;
-    let rate = 0;
-
-    // 1. Extract Customer (Word before "ko" or "ne")
-    const customerMatch = text.match(/([a-zA-Z\u0900-\u097F]+)\s+(?:ko|ne)\b/i);
-    if (customerMatch) {
-      customer = customerMatch[1].trim();
-    }
-
-    // 2. Extract Quantities
-    const qtyMatch = text.match(/(\d+)\s*(?:pcs|pc|piece|pieces|nos|qnty|kilo|kg)/i);
-    if (qtyMatch) {
-      qty = parseInt(qtyMatch[1], 10);
-    }
-
-    // 3. Extract Rates/Amounts
-    const numbers = text.match(/\d+/g);
-    if (numbers && numbers.length > 0) {
-      const parsedNumbers = numbers.map(n => parseInt(n, 10));
-      const prices = parsedNumbers.filter(n => n !== qty);
-      if (prices.length > 0) {
-        rate = Math.max(...prices);
-      } else {
-        rate = parsedNumbers[0];
-      }
-    }
-
-    // 4. Extract Item Name
-    const itemMatch = text.match(/(?:ko|ne)\s+(.+?)\s+(?:becha|sold|sale|ka|rate|\d+)/i);
-    if (itemMatch) {
-      item = itemMatch[1].trim();
+    if (!isRecording) {
+      startRecording();
     } else {
-      const altItemMatch = text.match(/(\bAC\b|\bFlour\b|\bAata\b|[a-zA-Z]{2,})/i);
-      if (altItemMatch && altItemMatch[1].toLowerCase() !== customer.toLowerCase()) {
-        item = altItemMatch[1];
-      }
+      stopRecording();
     }
-
-    // Populate fields
-    document.getElementById("customerName").value = customer;
-    document.getElementById("itemDesc").value = item;
-    document.getElementById("qty").value = qty;
-    document.getElementById("rate").value = rate;
-    calculateTotal();
-
-    const total = qty * rate;
-    document.getElementById("confirmText").innerText = `${customer} | ${qty} x ${item} | Total: ₹${total}`;
-    document.getElementById("confirmationBox").style.display = "block";
   }
 
-  function confirmVoiceEntry() {
-    document.getElementById("confirmationBox").style.display = "none";
-    document.getElementById("erpForm").requestSubmit();
+  async function startRecording() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorder = new MediaRecorder(stream);
+      audioChunks = [];
+
+      mediaRecorder.ondataavailable = (event) => audioChunks.push(event.data);
+      mediaRecorder.onstop = processAudioWithAI;
+
+      mediaRecorder.start();
+      isRecording = true;
+
+      const micBtn = document.getElementById("micBtn");
+      micBtn.innerText = "🛑 Stop & Process Audio";
+      micBtn.classList.add("recording");
+      document.getElementById("statusText").innerText = "🎙️ Listening... Speak now in any language!";
+    } catch (err) {
+      alert("Microphone access denied or not supported.");
+    }
   }
 
-  function cancelVoiceEntry() {
-    document.getElementById("confirmationBox").style.display = "none";
-    document.getElementById("statusText").innerText = "You can edit the form fields manually now.";
+  function stopRecording() {
+    if (mediaRecorder && isRecording) {
+      mediaRecorder.stop();
+      isRecording = false;
+
+      const micBtn = document.getElementById("micBtn");
+      micBtn.innerText = "🎙️ Tap to Speak (Any Language)";
+      micBtn.classList.remove("recording");
+      document.getElementById("statusText").innerText = "⏳ Processing audio with AI...";
+    }
+  }
+
+  async function processAudioWithAI() {
+    const apiKey = document.getElementById("apiKey").value.trim();
+    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+    const formData = new FormData();
+    formData.append('file', audioBlob, 'speech.webm');
+    formData.append('model', 'whisper-large-v3');
+
+    try {
+      // Step 1: Transcribe using Groq Whisper API
+      const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${apiKey}` },
+        body: formData
+      });
+
+      const data = await response.json();
+      if (!data.text) throw new Error(data.error?.message || "Transcription failed");
+
+      const transcript = data.text;
+      document.getElementById("statusText").innerText = `Heard: "${transcript}"`;
+
+      // Step 2: Parse Entity fields with Groq Llama 3
+      await extractFieldsWithLLM(transcript, apiKey);
+
+    } catch (err) {
+      document.getElementById("statusText").innerText = "Error: " + err.message;
+    }
+  }
+
+  async function extractFieldsWithLLM(text, apiKey) {
+    const systemPrompt = `You are an AI sales entry assistant for an ERP app. 
+Extract sales data from the user's spoken input (which may be in English, Hindi, Hinglish, or any language).
+Return ONLY a raw JSON object with these keys:
+{
+  "customerName": string (default "Cash Customer"),
+  "itemDesc": string (default "General Goods"),
+  "qty": number (default 1),
+  "rate": number (default 0),
+  "paymentStatus": "Paid" or "Pending" (default "Paid")
+}
+Do not return markdown formatting, backticks, or extra text. Output strictly JSON.`;
+
+    try {
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: "llama-3.3-70b-versatile",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: text }
+          ],
+          temperature: 0.1
+        })
+      });
+
+      const data = await response.json();
+      const content = data.choices[0].message.content.trim();
+      const cleanJson = content.replace(/```json|```/g, "").trim();
+      const parsed = JSON.parse(cleanJson);
+
+      // Fill Form Fields
+      document.getElementById("customerName").value = parsed.customerName || "Cash Customer";
+      document.getElementById("itemDesc").value = parsed.itemDesc || "General Goods";
+      document.getElementById("qty").value = parsed.qty || 1;
+      document.getElementById("rate").value = parsed.rate || 0;
+      document.getElementById("paymentStatus").value = parsed.paymentStatus || "Paid";
+
+      calculateTotal();
+
+      const total = (parsed.qty || 1) * (parsed.rate || 0);
+      document.getElementById("confirmText").innerText = `${parsed.customerName} | ${parsed.qty}x ${parsed.itemDesc} | Rate: ₹${parsed.rate} | Total: ₹${total}`;
+      document.getElementById("confirmationBox").style.display = "block";
+      document.getElementById("statusText").innerText = "✅ Successfully parsed by AI!";
+
+    } catch (err) {
+      document.getElementById("statusText").innerText = "AI Parsing Failed. Please check inputs manually.";
+    }
   }
 
   function handleManualSubmit(e) {
     e.preventDefault();
-    alert("Saved successfully!");
+    alert("Sale Saved Successfully!");
   }
 </script>
 
