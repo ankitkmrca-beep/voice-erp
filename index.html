@@ -1,69 +1,246 @@
-let recognition = null;
-let isRecording = false;
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Voice ERP System</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    body { background-color: #f0f2f5; padding: 20px; display: flex; justify-content: center; }
+    .container { background: white; padding: 30px; border-radius: 12px; width: 100%; max-width: 550px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+    h2 { margin-bottom: 20px; color: #1a73e8; text-align: center; }
 
-function startVoiceEntry() {
-  const statusText = document.getElementById("statusText");
-  const micBtn = document.querySelector(".mic-btn");
+    .voice-section { background: #e8f0fe; padding: 20px; border-radius: 10px; text-align: center; margin-bottom: 25px; border: 1px solid #d2e3fc; }
+    .mic-btn { background: #1a73e8; color: white; border: none; padding: 15px 25px; font-size: 16px; border-radius: 50px; cursor: pointer; font-weight: bold; transition: 0.3s; }
+    .mic-btn.recording { background: #d93025; }
+    .status-text { margin-top: 10px; font-size: 14px; color: #5f6368; font-style: italic; }
 
-  // Check if browser supports Speech Recognition
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognition) {
-    alert("Speech recognition is not supported in this browser. Please use Chrome.");
-    return;
+    .form-group { margin-bottom: 15px; }
+    label { display: block; margin-bottom: 5px; font-weight: 600; color: #3c4043; font-size: 14px; }
+    input, select { width: 100%; padding: 10px; border: 1px solid #dadce0; border-radius: 6px; font-size: 14px; }
+
+    .btn-submit { width: 100%; background: #34a853; color: white; border: none; padding: 12px; font-size: 16px; border-radius: 6px; font-weight: bold; cursor: pointer; margin-top: 10px; }
+    .btn-submit:hover { background: #2d8e47; }
+
+    .confirmation-box { background: #fff3cd; border: 1px solid #ffeeba; padding: 15px; border-radius: 8px; margin-bottom: 20px; display: none; }
+    .confirmation-btns { display: flex; gap: 10px; margin-top: 10px; }
+    .btn-confirm { flex: 1; background: #28a745; color: white; border: none; padding: 8px; border-radius: 4px; cursor: pointer; font-weight: bold; }
+    .btn-cancel { flex: 1; background: #dc3545; color: white; border: none; padding: 8px; border-radius: 4px; cursor: pointer; font-weight: bold; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h2>🎙️ Voice ERP System</h2>
+
+  <!-- Voice Section -->
+  <div class="voice-section">
+    <button class="mic-btn" onclick="toggleVoiceEntry()">🎙️ Speak Command (Jarvis)</button>
+    <div id="statusText" class="status-text">Click mic and speak (e.g., "Ankit ko AC becha 45000 ka 1 pcs")</div>
+  </div>
+
+  <!-- Voice Confirmation Banner -->
+  <div id="confirmationBox" class="confirmation-box">
+    <strong>Verify Entry:</strong>
+    <p id="confirmText"></p>
+    <div class="confirmation-btns">
+      <button class="btn-confirm" onclick="confirmVoiceEntry()">Yes, Save Sale</button>
+      <button class="btn-cancel" onclick="cancelVoiceEntry()">Cancel / Edit</button>
+    </div>
+  </div>
+
+  <!-- Entry Form -->
+  <form id="erpForm" onsubmit="handleManualSubmit(event)">
+    <div class="form-group">
+      <label>Customer Name</label>
+      <input type="text" id="customerName" required placeholder="e.g. Ankit">
+    </div>
+
+    <div class="form-group">
+      <label>Item Description</label>
+      <input type="text" id="itemDesc" required placeholder="e.g. AC">
+    </div>
+
+    <div style="display: flex; gap: 10px;">
+      <div class="form-group" style="flex: 1;">
+        <label>Quantity</label>
+        <input type="number" id="qty" value="1" required oninput="calculateTotal()">
+      </div>
+
+      <div class="form-group" style="flex: 1;">
+        <label>Rate (₹)</label>
+        <input type="number" id="rate" required oninput="calculateTotal()">
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>Total Amount (₹)</label>
+      <input type="number" id="totalAmount" readonly>
+    </div>
+
+    <div class="form-group">
+      <label>Payment Status</label>
+      <select id="paymentStatus">
+        <option value="Paid">Paid</option>
+        <option value="Pending">Pending</option>
+      </select>
+    </div>
+
+    <button type="submit" class="btn-submit">Save Sale & Generate Invoice</button>
+  </form>
+</div>
+
+<script>
+  let recognition = null;
+  let isRecording = false;
+
+  function calculateTotal() {
+    const q = parseFloat(document.getElementById('qty').value) || 0;
+    const r = parseFloat(document.getElementById('rate').value) || 0;
+    document.getElementById('totalAmount').value = q * r;
   }
 
-  // If already recording, TAP AGAIN TO STOP
-  if (isRecording && recognition) {
-    recognition.stop();
-    return;
-  }
+  function toggleVoiceEntry() {
+    const statusText = document.getElementById("statusText");
+    const micBtn = document.querySelector(".mic-btn");
 
-  // Initialize Speech Recognition
-  recognition = new SpeechRecognition();
-  recognition.continuous = true; // Keeps listening until tapped again
-  recognition.interimResults = true; // Shows live preview as you speak
-  recognition.lang = 'hi-IN'; // Optimized for Hindi / Hinglish
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("Speech recognition is not supported in this browser. Please use Google Chrome.");
+      return;
+    }
 
-  let finalTranscript = '';
+    if (isRecording && recognition) {
+      recognition.stop();
+      return;
+    }
 
-  recognition.onstart = function() {
-    isRecording = true;
-    if (micBtn) micBtn.innerText = "🛑 Tap Again to Stop Recording";
-    statusText.innerText = "🎙️ Recording... Speak now and tap again when finished!";
-  };
+    recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'hi-IN';
 
-  recognition.onresult = function(event) {
-    let interimTranscript = '';
-    for (let i = event.resultIndex; i < event.results.length; ++i) {
-      if (event.results[i].isFinal) {
-        finalTranscript += event.results[i][0].transcript;
+    let finalTranscript = '';
+
+    recognition.onstart = function() {
+      isRecording = true;
+      micBtn.innerText = "🛑 Tap Again to Stop Recording";
+      micBtn.classList.add("recording");
+      statusText.innerText = "🎙️ Recording... Speak now!";
+    };
+
+    recognition.onresult = function(event) {
+      let interimTranscript = '';
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        if (event.results[i].isFinal) {
+          finalTranscript += event.results[i][0].transcript + ' ';
+        } else {
+          interimTranscript += event.results[i][0].transcript;
+        }
+      }
+      statusText.innerText = "Heard: " + (finalTranscript || interimTranscript);
+    };
+
+    recognition.onerror = function(event) {
+      statusText.innerText = "Error listening: " + event.error;
+      resetMicUI();
+    };
+
+    recognition.onend = function() {
+      resetMicUI();
+      if (finalTranscript.trim().length > 0) {
+        parseVoiceCommand(finalTranscript.trim());
       } else {
-        interimTranscript += event.results[i][0].transcript;
+        statusText.innerText = "No speech detected. Tap to try again.";
+      }
+    };
+
+    recognition.start();
+  }
+
+  function resetMicUI() {
+    isRecording = false;
+    const micBtn = document.querySelector(".mic-btn");
+    micBtn.innerText = "🎙️ Speak Command (Jarvis)";
+    micBtn.classList.remove("recording");
+  }
+
+  function parseVoiceCommand(text) {
+    const statusText = document.getElementById("statusText");
+    statusText.innerText = `Recognized: "${text}"`;
+
+    let customer = "Cash Customer";
+    let item = "General Goods";
+    let qty = 1;
+    let rate = 0;
+
+    const lowerText = text.toLowerCase();
+
+    // 1. Extract Customer (Word before "ko" or "ne")
+    const customerMatch = text.match(/([a-zA-Z\u0900-\u097F]+)\s+(?:ko|ne)\b/i);
+    if (customerMatch) {
+      customer = customerMatch[1].trim();
+    }
+
+    // 2. Extract Quantities (e.g. "1 pcs", "2 piece", "1 pc")
+    const qtyMatch = text.match(/(\d+)\s*(?:pcs|pc|piece|pieces|nos|qnty|kilo|kg)/i);
+    if (qtyMatch) {
+      qty = parseInt(qtyMatch[1], 10);
+    }
+
+    // 3. Extract Numbers/Amounts (e.g., "45000 ka", "rate 45000", "45000")
+    const numbers = text.match(/\d+/g);
+    if (numbers && numbers.length > 0) {
+      const parsedNumbers = numbers.map(n => parseInt(n, 10));
+      // Exclude quantity number if matched
+      const prices = parsedNumbers.filter(n => n !== qty);
+      if (prices.length > 0) {
+        rate = Math.max(...prices); // Take highest number as price
+      } else {
+        rate = parsedNumbers[0];
       }
     }
-    statusText.innerText = "Listening: " + (finalTranscript || interimTranscript);
-  };
 
-  recognition.onerror = function(event) {
-    statusText.innerText = "Error: " + event.error;
-    resetMicUI();
-  };
-
-  recognition.onend = function() {
-    resetMicUI();
-    if (finalTranscript.trim().length > 0) {
-      statusText.innerText = `Processing: "${finalTranscript}"`;
-      parseVoiceCommand(finalTranscript);
+    // 4. Extract Item Name (Text between Customer "ko" and "becha"/"sold"/"ka")
+    const itemMatch = text.match(/(?:ko|ne)\s+(.+?)\s+(?:becha|sold|sale|ka|rate|\d+)/i);
+    if (itemMatch) {
+      item = itemMatch[1].trim();
     } else {
-      statusText.innerText = "No voice detected. Tap to try again.";
+      // Secondary fallback for item extraction
+      const altItemMatch = text.match(/(\bAC\b|\bFlour\b|\bAata\b|[a-zA-Z]{2,})/i);
+      if (altItemMatch && altItemMatch[1].toLowerCase() !== customer.toLowerCase()) {
+        item = altItemMatch[1];
+      }
     }
-  };
 
-  recognition.start();
-}
+    // Populate Form Fields
+    document.getElementById("customerName").value = customer;
+    document.getElementById("itemDesc").value = item;
+    document.getElementById("qty").value = qty;
+    document.getElementById("rate").value = rate;
+    calculateTotal();
 
-function resetMicUI() {
-  isRecording = false;
-  const micBtn = document.querySelector(".mic-btn");
-  if (micBtn) micBtn.innerText = "🎙️ Speak Command (Jarvis)";
-}
+    // Show Confirmation Banner
+    const total = qty * rate;
+    document.getElementById("confirmText").innerText = `${customer} | ${qty} x ${item} | Total: ₹${total}`;
+    document.getElementById("confirmationBox").style.display = "block";
+  }
+
+  function confirmVoiceEntry() {
+    document.getElementById("confirmationBox").style.display = "none";
+    document.getElementById("erpForm").requestSubmit();
+  }
+
+  function cancelVoiceEntry() {
+    document.getElementById("confirmationBox").style.display = "none";
+    document.getElementById("statusText").innerText = "You can edit the form fields manually now.";
+  }
+
+  function handleManualSubmit(e) {
+    e.preventDefault();
+    alert("Saved successfully!");
+  }
+</script>
+
+</body>
+</html>
