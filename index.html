@@ -45,8 +45,8 @@
 
   <!-- Voice Section -->
   <div class="voice-section">
-    <button id="micBtn" class="mic-btn" onclick="toggleRecording()">🎙️ Tap to Speak (Any Language)</button>
-    <div id="statusText" class="status-text">Ready. Tap mic, speak command, and tap stop.</div>
+    <button id="micBtn" class="mic-btn" onclick="toggleVoice()">🎙️ Tap to Speak (Any Language)</button>
+    <div id="statusText" class="status-text">Ready. Tap mic, speak command, and tap again to finish.</div>
   </div>
 
   <!-- Voice Confirmation Banner -->
@@ -97,10 +97,8 @@
 </div>
 
 <script>
-  let mediaRecorder = null;
-  let audioChunks = [];
-  let isRecording = false;
-  let autoStopTimer = null;
+  let recognition = null;
+  let isListening = false;
 
   window.onload = () => {
     const savedKey = localStorage.getItem("groq_api_key");
@@ -117,104 +115,75 @@
     document.getElementById('totalAmount').value = q * r;
   }
 
-  async function toggleRecording() {
+  function toggleVoice() {
     const apiKey = document.getElementById("apiKey").value.trim();
     if (!apiKey) {
       alert("Please enter your Groq API Key at the top first!");
       return;
     }
 
-    if (!isRecording) {
-      startRecording();
-    } else {
-      stopRecording();
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("Speech recognition is not supported in this browser. Please use Google Chrome.");
+      return;
     }
-  }
 
-  async function startRecording() {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorder = new MediaRecorder(stream);
-      audioChunks = [];
+    if (isListening && recognition) {
+      recognition.stop();
+      return;
+    }
 
-      mediaRecorder.ondataavailable = (event) => audioChunks.push(event.data);
-      mediaRecorder.onstop = processAudioWithAI;
+    recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = 'hi-IN'; // Works for Hindi, Hinglish & English
 
-      mediaRecorder.start();
-      isRecording = true;
-
+    recognition.onstart = function() {
+      isListening = true;
       const micBtn = document.getElementById("micBtn");
-      micBtn.innerText = "🛑 Stop & Process Audio";
+      micBtn.innerText = "🛑 Stop & Process Speech";
       micBtn.classList.add("recording");
-      document.getElementById("statusText").innerText = "🎙️ Listening... Speak now (Max 15s)!";
+      document.getElementById("statusText").innerText = "🎙️ Listening... Speak now!";
+    };
 
-      // Automatically stop after 15 seconds to prevent accidental long audio files
-      autoStopTimer = setTimeout(() => {
-        if (isRecording) stopRecording();
-      }, 15000);
-
-    } catch (err) {
-      alert("Microphone access denied or not supported.");
-    }
-  }
-
-  function stopRecording() {
-    if (autoStopTimer) clearTimeout(autoStopTimer);
-    if (mediaRecorder && isRecording) {
-      mediaRecorder.stop();
-      isRecording = false;
-
-      // Stop mic track
-      mediaRecorder.stream.getTracks().forEach(track => track.stop());
-
-      const micBtn = document.getElementById("micBtn");
-      micBtn.innerText = "🎙️ Tap to Speak (Any Language)";
-      micBtn.classList.remove("recording");
-      document.getElementById("statusText").innerText = "⏳ Processing short audio with AI...";
-    }
-  }
-
-  async function processAudioWithAI() {
-    const apiKey = document.getElementById("apiKey").value.trim();
-    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-    const formData = new FormData();
-    formData.append('file', audioBlob, 'speech.webm');
-    
-    // Switch to whisper-large-v3-turbo for faster speed and better rate limits
-    formData.append('model', 'whisper-large-v3-turbo');
-
-    try {
-      const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${apiKey}` },
-        body: formData
-      });
-
-      const data = await response.json();
-      if (!data.text) throw new Error(data.error?.message || "Transcription failed");
-
-      const transcript = data.text;
-      document.getElementById("statusText").innerText = `Heard: "${transcript}"`;
-
+    recognition.onresult = async function(event) {
+      const transcript = event.results[0][0].transcript;
+      document.getElementById("statusText").innerText = `Heard: "${transcript}" — Parsing with AI...`;
       await extractFieldsWithLLM(transcript, apiKey);
+    };
 
-    } catch (err) {
-      document.getElementById("statusText").innerText = "Error: " + err.message;
-    }
+    recognition.onerror = function(event) {
+      document.getElementById("statusText").innerText = "Speech error: " + event.error;
+      resetMicUI();
+    };
+
+    recognition.onend = function() {
+      resetMicUI();
+    };
+
+    recognition.start();
+  }
+
+  function resetMicUI() {
+    isListening = false;
+    const micBtn = document.getElementById("micBtn");
+    micBtn.innerText = "🎙️ Tap to Speak (Any Language)";
+    micBtn.classList.remove("recording");
   }
 
   async function extractFieldsWithLLM(text, apiKey) {
-    const systemPrompt = `You are an AI sales entry assistant for an ERP app. 
-Extract sales data from the user's spoken input (in English, Hindi, Hinglish, or any language).
-Return ONLY a raw JSON object with these exact keys:
+    const systemPrompt = `You are a sales entry assistant for an ERP app in India. 
+Extract invoice details from the user's spoken command (in English, Hindi, Hinglish, or any language).
+
+Respond ONLY with a JSON object. Do not include markdown tags, code blocks, or explanations.
+Keys:
 {
   "customerName": string (default "Cash Customer"),
   "itemDesc": string (default "General Goods"),
   "qty": number (default 1),
   "rate": number (default 0),
   "paymentStatus": "Paid" or "Pending" (default "Paid")
-}
-Do not return markdown formatting or backticks. Output raw JSON only.`;
+}`;
 
     try {
       const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -234,9 +203,21 @@ Do not return markdown formatting or backticks. Output raw JSON only.`;
       });
 
       const data = await response.json();
-      const content = data.choices[0].message.content.trim();
-      const cleanJson = content.replace(/```json|```/g, "").trim();
-      const parsed = JSON.parse(cleanJson);
+      if (!data.choices || !data.choices[0]) {
+        throw new Error(data.error?.message || "Invalid API response");
+      }
+
+      let content = data.choices[0].message.content.trim();
+      
+      // Clean up markdown wrapper formatting
+      content = content.replace(/```json/gi, "").replace(/```/g, "").trim();
+      const firstBrace = content.indexOf('{');
+      const lastBrace = content.lastIndexOf('}');
+      if (firstBrace !== -1 && lastBrace !== -1) {
+        content = content.substring(firstBrace, lastBrace + 1);
+      }
+
+      const parsed = JSON.parse(content);
 
       document.getElementById("customerName").value = parsed.customerName || "Cash Customer";
       document.getElementById("itemDesc").value = parsed.itemDesc || "General Goods";
@@ -252,7 +233,7 @@ Do not return markdown formatting or backticks. Output raw JSON only.`;
       document.getElementById("statusText").innerText = "✅ Successfully parsed by AI!";
 
     } catch (err) {
-      document.getElementById("statusText").innerText = "AI Parsing Failed. Please fill fields manually.";
+      document.getElementById("statusText").innerText = "AI Parsing Error: " + err.message;
     }
   }
 
