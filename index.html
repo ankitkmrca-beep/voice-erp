@@ -45,7 +45,7 @@
 
   <!-- Voice Section -->
   <div class="voice-section">
-    <button id="micBtn" class="mic-btn" onclick="toggleVoice()">🎙️ Tap to Speak (Any Language)</button>
+    <button id="micBtn" class="mic-btn" onclick="toggleVoice()">🎙️️ Tap to Speak (Any Language)</button>
     <div id="statusText" class="status-text">Ready. Tap mic, speak command, and tap again to finish.</div>
   </div>
 
@@ -136,7 +136,7 @@
     recognition = new SpeechRecognition();
     recognition.continuous = false;
     recognition.interimResults = false;
-    recognition.lang = 'hi-IN'; // Works for Hindi, Hinglish & English
+    recognition.lang = 'hi-IN';
 
     recognition.onstart = function() {
       isListening = true;
@@ -193,7 +193,7 @@ Keys:
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          model: "llama-3.3-70b-versatile",
+          model: "llama-3.1-8b-instant",
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: text }
@@ -209,7 +209,6 @@ Keys:
 
       let content = data.choices[0].message.content.trim();
       
-      // Clean up markdown wrapper formatting
       content = content.replace(/```json/gi, "").replace(/```/g, "").trim();
       const firstBrace = content.indexOf('{');
       const lastBrace = content.lastIndexOf('}');
@@ -218,23 +217,54 @@ Keys:
       }
 
       const parsed = JSON.parse(content);
-
-      document.getElementById("customerName").value = parsed.customerName || "Cash Customer";
-      document.getElementById("itemDesc").value = parsed.itemDesc || "General Goods";
-      document.getElementById("qty").value = parsed.qty || 1;
-      document.getElementById("rate").value = parsed.rate || 0;
-      document.getElementById("paymentStatus").value = parsed.paymentStatus || "Paid";
-
-      calculateTotal();
-
-      const total = (parsed.qty || 1) * (parsed.rate || 0);
-      document.getElementById("confirmText").innerText = `${parsed.customerName} | ${parsed.qty}x ${parsed.itemDesc} | Rate: ₹${parsed.rate} | Total: ₹${total}`;
-      document.getElementById("confirmationBox").style.display = "block";
-      document.getElementById("statusText").innerText = "✅ Successfully parsed by AI!";
+      fillFormFields(parsed.customerName, parsed.itemDesc, parsed.qty, parsed.rate, parsed.paymentStatus);
 
     } catch (err) {
-      document.getElementById("statusText").innerText = "AI Parsing Error: " + err.message;
+      console.warn("LLM error, falling back to local regex: ", err);
+      fallbackLocalRegexParse(text);
     }
+  }
+
+  function fallbackLocalRegexParse(text) {
+    let customer = "Cash Customer";
+    let item = "General Goods";
+    let qty = 1;
+    let rate = 0;
+
+    let cleanText = text.replace(/\b(एक|1)\b/gi, ' 1 ').replace(/\b(दो|2)\b/gi, ' 2 ');
+
+    const customerMatch = cleanText.match(/([a-zA-Z\u0900-\u097F]+)\s+(?:को|ने|ko|ne)\b/i);
+    if (customerMatch) customer = customerMatch[1].trim();
+
+    const qtyMatch = cleanText.match(/(\d+)\s*(?:pcs|pc|piece|pieces|पीस|नग|nos|kg)/i);
+    if (qtyMatch) qty = parseInt(qtyMatch[1], 10);
+
+    const numbers = cleanText.match(/\d+/g);
+    if (numbers && numbers.length > 0) {
+      const parsedNumbers = numbers.map(n => parseInt(n, 10));
+      const prices = parsedNumbers.filter(n => n !== qty);
+      rate = prices.length > 0 ? Math.max(...prices) : parsedNumbers[0];
+    }
+
+    const itemMatch = cleanText.match(/(?:को|ne|ko)\s+(.+?)\s+(?:बेचा|बचा|sold|sale|का|पर|\d+)/i);
+    if (itemMatch) item = itemMatch[1].trim();
+
+    fillFormFields(customer, item, qty, rate, "Paid");
+  }
+
+  function fillFormFields(customer, item, qty, rate, paymentStatus) {
+    document.getElementById("customerName").value = customer || "Cash Customer";
+    document.getElementById("itemDesc").value = item || "General Goods";
+    document.getElementById("qty").value = qty || 1;
+    document.getElementById("rate").value = rate || 0;
+    document.getElementById("paymentStatus").value = paymentStatus || "Paid";
+
+    calculateTotal();
+
+    const total = (qty || 1) * (rate || 0);
+    document.getElementById("confirmText").innerText = `${customer} | ${qty}x ${item} | Rate: ₹${rate} | Total: ₹${total}`;
+    document.getElementById("confirmationBox").style.display = "block";
+    document.getElementById("statusText").innerText = "✅ Entry Extracted Successfully!";
   }
 
   function handleManualSubmit(e) {
