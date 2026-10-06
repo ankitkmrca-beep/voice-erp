@@ -1,50 +1,66 @@
-async function extractFieldsWithGemini(transcriptText, geminiApiKey) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`;
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Voice ERP System (Powered by Gemini)</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    body { background-color: #f0f2f5; padding: 20px; display: flex; justify-content: center; }
+    .container { background: white; padding: 30px; border-radius: 12px; width: 100%; max-width: 550px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+    h2 { margin-bottom: 20px; color: #1a73e8; text-align: center; }
 
-  const prompt = `You are a sales entry assistant for an Indian ERP billing application.
-Extract sale details from this spoken text: "${transcriptText}".
+    .api-box { background: #e8f0fe; padding: 12px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #d2e3fc; }
+    .api-box label { font-weight: 600; color: #1a73e8; font-size: 13px; }
+    .api-box input { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 13px; margin-top: 5px; }
 
-Rules:
-1. "Ek AC" / "One AC" / "AC" means qty: 1 and itemDesc: "AC".
-2. If customer name is missing, use "Cash Customer".
-3. If rate or quantity is missing, return 0 or 1 respectively.
-4. Return ONLY valid JSON with these exact keys:
-{
-  "customerName": string,
-  "itemDesc": string,
-  "qty": number,
-  "rate": number,
-  "paymentStatus": "Paid" or "Pending"
-}`;
+    .voice-section { background: #f1f3f4; padding: 20px; border-radius: 10px; text-align: center; margin-bottom: 25px; border: 1px solid #dadce0; }
+    .mic-btn { background: #1a73e8; color: white; border: none; padding: 15px 25px; font-size: 16px; border-radius: 50px; cursor: pointer; font-weight: bold; transition: 0.3s; }
+    .mic-btn.recording { background: #d93025; animation: pulse 1.5s infinite; }
+    .status-text { margin-top: 10px; font-size: 14px; color: #5f6368; font-style: italic; }
 
-  try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{
-          parts: [{ text: prompt }]
-        }],
-        generationConfig: {
-          responseMimeType: "application/json"
-        }
-      })
-    });
+    @keyframes pulse {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+      100% { transform: scale(1); }
+    }
 
-    const data = await response.json();
-    const rawJsonText = data.candidates[0].content.parts[0].text;
-    const parsedData = JSON.parse(rawJsonText);
+    .form-group { margin-bottom: 15px; }
+    label { display: block; margin-bottom: 5px; font-weight: 600; color: #3c4043; font-size: 14px; }
+    input, select { width: 100%; padding: 10px; border: 1px solid #dadce0; border-radius: 6px; font-size: 14px; }
 
-    // Populate your ERP form fields
-    fillFormFields(
-      parsedData.customerName || "Cash Customer",
-      parsedData.itemDesc || "General Goods",
-      parsedData.qty || 1,
-      parsedData.rate || 0,
-      parsedData.paymentStatus || "Paid"
-    );
+    .btn-submit { width: 100%; background: #34a853; color: white; border: none; padding: 12px; font-size: 16px; border-radius: 6px; font-weight: bold; cursor: pointer; margin-top: 10px; }
+    .confirmation-box { background: #e6f4ea; border: 1px solid #b7e1cd; padding: 15px; border-radius: 8px; margin-bottom: 20px; display: none; }
+  </style>
+</head>
+<body>
 
-  } catch (error) {
-    console.error("Gemini API Error:", error);
-  }
-}
+<div class="container">
+  <h2>✨ AI Voice ERP System</h2>
+
+  <!-- Gemini API Key Input -->
+  <div class="api-box">
+    <label for="apiKey">🔑 Google Gemini API Key:</label>
+    <input type="password" id="apiKey" placeholder="AIzaSy..." onchange="saveApiKey(this.value)">
+  </div>
+
+  <!-- Voice Section -->
+  <div class="voice-section">
+    <button id="micBtn" class="mic-btn" onclick="toggleVoice()">🎙️ Tap to Speak (Any Language)</button>
+    <div id="statusText" class="status-text">Ready. Tap mic, speak command, and tap again to finish.</div>
+  </div>
+
+  <!-- Voice Confirmation Banner -->
+  <div id="confirmationBox" class="confirmation-box">
+    <strong>AI Extracted Entry:</strong>
+    <p id="confirmText" style="margin-top:5px; font-weight: 500;"></p>
+  </div>
+
+  <!-- Entry Form -->
+  <form id="erpForm" onsubmit="handleManualSubmit(event)">
+    <div class="form-group">
+      <label>Customer Name</label>
+      <input type="text" id="customerName" required placeholder="e.g. Ankit">
+    </div>
+
+    <div class="form-group">
