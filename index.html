@@ -88,8 +88,8 @@
 </div>
 
 <script>
-  // PASTE YOUR GOOGLE APPS SCRIPT WEB APP URL HERE:
-  const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzQkqqr9EpjGaPSpo8yhAPlPJ-LOnMb6QiXN-rQHx8M4GZrecJM48EsJSaKsxd2Szyg/exec";
+  // PASTE YOUR GOOGLE APPS SCRIPT WEB APP URL HERE INSIDE DOUBLE QUOTES:
+  const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzGWB-89pA2TrJ7BEyegV6WMh43HVjOf8_-vayQKTvRnVWJq4vIA03N9_kw4yhGaRlA/exec";
 
   let recognition = null;
   let isListening = false;
@@ -109,7 +109,7 @@
     try {
       await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch (err) {
-      alert("Microphone permission denied! Please allow mic access in your browser settings.");
+      alert("Microphone permission denied! Please allow mic access in browser settings.");
       return;
     }
 
@@ -164,8 +164,13 @@
 
   async function sendToBackend(transcriptText) {
     try {
+      // Send payload with text/plain header and redirect follow to prevent CORS blocking
       const response = await fetch(APPS_SCRIPT_URL, {
         method: "POST",
+        redirect: "follow",
+        headers: {
+          "Content-Type": "text/plain;charset=utf-8"
+        },
         body: JSON.stringify({ transcript: transcriptText })
       });
 
@@ -180,10 +185,11 @@
           d.paymentStatus || "Paid"
         );
       } else {
-        document.getElementById("statusText").innerText = "Error parsing speech. Please try again.";
+        console.error("Backend Error:", res.message);
+        document.getElementById("statusText").innerText = "Error: " + (res.message || "Could not parse speech");
       }
     } catch (err) {
-      console.error(err);
+      console.error("Fetch Error:", err);
       document.getElementById("statusText").innerText = "Connection error to Google Apps Script backend.";
     }
   }
