@@ -3,19 +3,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI Voice ERP System</title>
+  <title>Voice ERP System</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
     body { background-color: #f0f2f5; padding: 20px; display: flex; justify-content: center; }
     .container { background: white; padding: 30px; border-radius: 12px; width: 100%; max-width: 550px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
     h2 { margin-bottom: 20px; color: #1a73e8; text-align: center; }
 
-    .api-box { background: #e8f0fe; padding: 12px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #d2e3fc; }
-    .api-box label { font-weight: 600; color: #1a73e8; font-size: 13px; }
-    .api-box input { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 13px; margin-top: 5px; }
-
-    .voice-section { background: #f1f3f4; padding: 20px; border-radius: 10px; text-align: center; margin-bottom: 25px; border: 1px solid #dadce0; }
-    .mic-btn { background: #1a73e8; color: white; border: none; padding: 15px 25px; font-size: 16px; border-radius: 50px; cursor: pointer; font-weight: bold; transition: 0.3s; width: 100%; }
+    .voice-section { background: #e8f0fe; padding: 20px; border-radius: 10px; text-align: center; margin-bottom: 25px; border: 1px solid #d2e3fc; }
+    .mic-btn { background: #1a73e8; color: white; border: none; padding: 15px 25px; font-size: 16px; border-radius: 50px; cursor: pointer; font-weight: bold; width: 100%; transition: 0.3s; }
     .mic-btn.recording { background: #d93025; animation: pulse 1.5s infinite; }
     .status-text { margin-top: 10px; font-size: 14px; color: #5f6368; font-style: italic; }
 
@@ -36,18 +32,12 @@
 <body>
 
 <div class="container">
-  <h2>✨ AI Voice ERP System</h2>
+  <h2>🎙️ Voice ERP System</h2>
 
-  <!-- Gemini API Key Input -->
-  <div class="api-box">
-    <label for="apiKey">🔑 Google Gemini API Key:</label>
-    <input type="password" id="apiKey" placeholder="AIzaSy..." oninput="saveApiKey(this.value)">
-  </div>
-
-  <!-- Voice Section -->
+  <!-- Voice Input Section -->
   <div class="voice-section">
-    <button id="micBtn" class="mic-btn" onclick="toggleVoice()">🎙️ Tap to Speak (Any Language)</button>
-    <div id="statusText" class="status-text">Ready. Tap mic, speak command, and tap again to finish.</div>
+    <button id="micBtn" class="mic-btn" onclick="toggleVoice()">🎙️ Tap to Speak Command</button>
+    <div id="statusText" class="status-text">Tap mic, speak sale entry, and tap again to stop.</div>
   </div>
 
   <!-- Voice Confirmation Banner -->
@@ -65,7 +55,7 @@
 
     <div class="form-group">
       <label>Item Description</label>
-      <input type="text" id="itemDesc" required placeholder="e.g. AC">
+      <input type="text" id="itemDesc" required placeholder="e.g. Wheat Flour / AC">
     </div>
 
     <div style="display: flex; gap: 10px;">
@@ -98,17 +88,11 @@
 </div>
 
 <script>
+  // PASTE YOUR GOOGLE APPS SCRIPT WEB APP URL HERE:
+  const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzQkqqr9EpjGaPSpo8yhAPlPJ-LOnMb6QiXN-rQHx8M4GZrecJM48EsJSaKsxd2Szyg/exec";
+
   let recognition = null;
   let isListening = false;
-
-  window.onload = () => {
-    const savedKey = localStorage.getItem("gemini_api_key");
-    if (savedKey) document.getElementById("apiKey").value = savedKey;
-  };
-
-  function saveApiKey(key) {
-    localStorage.setItem("gemini_api_key", key.trim());
-  }
 
   function calculateTotal() {
     const q = parseFloat(document.getElementById('qty').value) || 0;
@@ -117,17 +101,15 @@
   }
 
   async function toggleVoice() {
-    const apiKey = document.getElementById("apiKey").value.trim();
-    if (!apiKey) {
-      alert("Please enter your Google Gemini API Key at the top first!");
+    if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL.includes("YOUR_APPS_SCRIPT_WEB_APP_URL_HERE")) {
+      alert("Please paste your Google Apps Script Web App URL into APPS_SCRIPT_URL in index.html first!");
       return;
     }
 
-    // Request Mic Access directly to fix unresponsive mobile tap
     try {
       await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch (err) {
-      alert("Microphone permission denied! Please allow microphone access in browser settings.");
+      alert("Microphone permission denied! Please allow mic access in your browser settings.");
       return;
     }
 
@@ -150,15 +132,15 @@
     recognition.onstart = function() {
       isListening = true;
       const micBtn = document.getElementById("micBtn");
-      micBtn.innerText = "🛑 Stop & Process Speech";
+      micBtn.innerText = "🛑 Stop & Process";
       micBtn.classList.add("recording");
-      document.getElementById("statusText").innerText = "🎙️ Listening... Speak clearly now!";
+      document.getElementById("statusText").innerText = "🎙️ Listening... Speak now!";
     };
 
     recognition.onresult = async function(event) {
       const transcript = event.results[0][0].transcript;
-      document.getElementById("statusText").innerText = `Heard: "${transcript}" — Gemini processing...`;
-      await extractFieldsWithGemini(transcript, apiKey);
+      document.getElementById("statusText").innerText = `Heard: "${transcript}" — AI processing...`;
+      await sendToBackend(transcript);
     };
 
     recognition.onerror = function(event) {
@@ -176,103 +158,34 @@
   function resetMicUI() {
     isListening = false;
     const micBtn = document.getElementById("micBtn");
-    micBtn.innerText = "🎙️ Tap to Speak (Any Language)";
+    micBtn.innerText = "🎙️ Tap to Speak Command";
     micBtn.classList.remove("recording");
   }
 
-  async function extractFieldsWithGemini(transcriptText, apiKey) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-
-    const systemInstructions = `You are a strict sales data extractor for an Indian ERP app.
-Parse spoken voice commands (Hindi, Hinglish, or English) into structured JSON.
-
-Rules:
-1. Items like "AC", "ऐसी", "एसी", "Fridge", "TV", "Aata", "Wheat Flour", "Loose Aata" MUST go into "itemDesc".
-2. "Ek AC" / "एक एसी" means qty = 1 and itemDesc = "AC".
-3. Words before "ko", "ne", "को", or "ने" are customer names (e.g. "Ankit ko" -> customerName: "Ankit").
-4. If no customer name is specified (e.g. "Ek AC 35000 me becha"), use customerName: "Cash Customer".
-5. Words like "udhaar", "pending", "baki" set paymentStatus to "Pending", otherwise "Paid".`;
-
-    const requestBody = {
-      system_instruction: {
-        parts: [{ text: systemInstructions }]
-      },
-      contents: [
-        {
-          parts: [{ text: `Parse this entry: "${transcriptText}"` }]
-        }
-      ],
-      generationConfig: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: "OBJECT",
-          properties: {
-            customerName: { type: "STRING" },
-            itemDesc: { type: "STRING" },
-            qty: { type: "NUMBER" },
-            rate: { type: "NUMBER" },
-            paymentStatus: { type: "STRING", enum: ["Paid", "Pending"] }
-          },
-          required: ["customerName", "itemDesc", "qty", "rate", "paymentStatus"]
-        }
-      }
-    };
-
+  async function sendToBackend(transcriptText) {
     try {
-      const response = await fetch(url, {
+      const response = await fetch(APPS_SCRIPT_URL, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody)
+        body: JSON.stringify({ transcript: transcriptText })
       });
 
-      const data = await response.json();
-      if (data.error) throw new Error(data.error.message);
-
-      const rawJsonText = data.candidates[0].content.parts[0].text;
-      const parsed = JSON.parse(rawJsonText);
-
-      fillFormFields(
-        parsed.customerName || "Cash Customer",
-        parsed.itemDesc || "General Goods",
-        parsed.qty || 1,
-        parsed.rate || 0,
-        parsed.paymentStatus || "Paid"
-      );
-
+      const res = await response.json();
+      if (res.status === "success") {
+        const d = res.data;
+        fillFormFields(
+          d.customerName || "Cash Customer",
+          d.itemDesc || "General Goods",
+          d.qty || 1,
+          d.rate || 0,
+          d.paymentStatus || "Paid"
+        );
+      } else {
+        document.getElementById("statusText").innerText = "Error parsing speech. Please try again.";
+      }
     } catch (err) {
-      console.warn("Gemini error, fallback active: ", err);
-      fallbackLocalRegexParse(transcriptText);
+      console.error(err);
+      document.getElementById("statusText").innerText = "Connection error to Google Apps Script backend.";
     }
-  }
-
-  function fallbackLocalRegexParse(text) {
-    let customer = "Cash Customer";
-    let item = "General Goods";
-    let qty = 1;
-    let rate = 0;
-    let status = /udhaar|pending|unpaid|baki/i.test(text) ? "Pending" : "Paid";
-
-    let cleanText = text
-      .replace(/\b(एक|1)\b/gi, ' 1 ')
-      .replace(/\b(ऐसी|एसी|ac)\b/gi, 'AC');
-
-    if (/AC/i.test(cleanText)) {
-      item = "AC";
-    }
-
-    const customerMatch = cleanText.match(/([a-zA-Z\u0900-\u097F]+)\s+(?:ko|ne|to|for|ने|को)\b/i);
-    if (customerMatch && !/AC|becha|sale/i.test(customerMatch[1])) {
-      customer = customerMatch[1].trim();
-    }
-
-    const numbers = cleanText.match(/\d+/g);
-    if (numbers && numbers.length > 0) {
-      const parsedNumbers = numbers.map(n => parseInt(n, 10));
-      const filtered = parsedNumbers.filter(n => n !== qty);
-      rate = filtered.length > 0 ? Math.max(...filtered) : (parsedNumbers[0] !== 1 ? parsedNumbers[0] : 0);
-    }
-
-    fillFormFields(customer, item, qty, rate, status);
   }
 
   function fillFormFields(customer, item, qty, rate, paymentStatus) {
@@ -287,7 +200,7 @@ Rules:
     const total = qty * rate;
     document.getElementById("confirmText").innerText = `${customer} | ${qty}x ${item} | Rate: ₹${rate} | Total: ₹${total}`;
     document.getElementById("confirmationBox").style.display = "block";
-    document.getElementById("statusText").innerText = `✅ Processed: ${customer} bought ${item}`;
+    document.getElementById("statusText").innerText = `✅ Successfully Extracted: ${customer} bought ${item}`;
   }
 
   function handleManualSubmit(e) {
